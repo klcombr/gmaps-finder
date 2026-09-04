@@ -1,5 +1,6 @@
 """SQLite deduplication — stores only identifiers, not full business data."""
 
+import os
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,7 @@ class DedupDB:
     def __init__(self, path: str = "data/dedup.db"):
         self.path = path
         self._local = threading.local()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self._init_schema()
 
     def _get_conn(self) -> sqlite3.Connection:

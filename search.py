@@ -1,11 +1,10 @@
-"""Google Places API (New) — Text Search client + business normalization."""
+"""SerpAPI Google Maps client + business normalization."""
 
 import re
 import time
 import unicodedata
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -26,22 +25,6 @@ SOCIAL = frozenset({
     "pinterest.com", "www.pinterest.com",
     "threads.net", "www.threads.net",
 })
-
-# ── API field masks ────────────────────────────────────────────────────
-
-SEARCH_FIELDS = ",".join([
-    "places.id", "places.displayName", "places.formattedAddress",
-    "places.location", "places.rating", "places.userRatingCount",
-    "places.websiteUri", "places.businessStatus", "places.types",
-    "places.primaryType", "nextPageToken",
-])
-
-DETAIL_FIELDS = ",".join([
-    "id", "displayName", "formattedAddress", "location", "rating",
-    "userRatingCount", "websiteUri", "businessStatus", "types",
-    "primaryType", "internationalPhoneNumber", "nationalPhoneNumber",
-    "regularOpeningHours", "editorialSummary",
-])
 
 # ── Regex helpers ──────────────────────────────────────────────────────
 
@@ -138,99 +121,85 @@ def has_own_website(url: str | None) -> str:
     return "true"
 
 
-# ── Google Maps client ────────────────────────────────────────────────
+# ── SerpAPI client ────────────────────────────────────────────────────
 
-class MapsClient:
-    SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
-    DETAIL_URL = "https://places.googleapis.com/v1/places"
+class SerpClient:
+    """SerpAPI Google Maps search — no Google billing needed."""
+
+    ENDPOINT = "https://serpapi.com/search.json"
 
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.session = requests.Session()
         retry = Retry(total=4, backoff_factor=1.2,
                       status_forcelist=[429, 500, 502, 503, 504],
-                      allowed_methods=["POST", "GET"])
+                      allowed_methods=["GET"])
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
         self._last = 0.0
 
     def _throttle(self):
         gap = time.monotonic() - self._last
-        if gap < 0.12:
-            time.sleep(0.12 - gap)
+        if gap < 1.0:
+            time.sleep(1.0 - gap)
         self._last = time.monotonic()
 
-    def search(self, query: str, page_token: str | None = None,
-               page_size: int = 20) -> dict[str, Any]:
+    def search(self, query: str, start: int = 0) -> dict:
         self._throttle()
-        body: dict[str, Any] = {
-            "textQuery": query,
-            "pageSize": page_size,
-            "languageCode": "pt-BR",
+        params = {
+            "engine": "google_maps",
+            "q": query,
+            "api_key": self.api_key,
+            "start": start,
+            "hl": "pt-br",
         }
-        if page_token:
-            body["pageToken"] = page_token
-        r = self.session.post(
-            self.SEARCH_URL, json=body,
-            headers={
-                "Content-Type": "application/json",
-                "X-Goog-Api-Key": self.api_key,
-                "X-Goog-FieldMask": SEARCH_FIELDS,
-            },
-            timeout=25,
-        )
+        r = self.session.get(self.ENDPOINT, params=params, timeout=30)
         r.raise_for_status()
         return r.json()
 
-    def details(self, place_id: str) -> dict[str, Any] | None:
-        self._throttle()
-        try:
-            r = self.session.get(
-                f"{self.DETAIL_URL}/{place_id}",
-                headers={
-                    "X-Goog-Api-Key": self.api_key,
-                    "X-Goog-FieldMask": DETAIL_FIELDS,
-                },
-                timeout=20,
-            )
-            r.raise_for_status()
-            return r.json()
-        except requests.RequestException:
-            return None
 
+# ── SerpAPI response → Business ───────────────────────────────────────
 
-# ── Raw → Business conversion ─────────────────────────────────────────
-
-def to_business(raw: dict, query: str, details: dict | None = None) -> Business:
-    addr = raw.get("formattedAddress", "")
+def to_business(raw: dict, query: str) -> Business:
+    addr = raw.get("address", "")
     p = parse_address(addr)
-    loc = raw.get("location", {})
-    disp = raw.get("displayName", {})
-    name = disp.get("text", "") if isinstance(disp, dict) else str(disp)
-    website = raw.get("websiteUri", "")
+    gps = raw.get("gps_coordinates", {})
     types = raw.get("types", [])
-    primary = raw.get("primaryType", "")
+    primary = raw.get("type", "")
 
-    phone, hours, desc = "", "", ""
-    if details:
-        phone = details.get("internationalPhoneNumber", "") or details.get("nationalPhoneNumber", "")
-        oh = details.get("regularOpeningHours")
-        if oh and isinstance(oh, dict):
-            hours = "; ".join(oh.get("weekdayDescriptions", [])[:7])
-        es = details.get("editorialSummary")
-        if es and isinstance(es, dict):
-            desc = es.get("overview", "")
+    # Operating hours → string
+    oh = raw.get("operating_hours", {})
+    hours = ""
+    if oh and isinstance(oh, dict):
+        days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        parts = []
+        for d in days:
+            if d in oh:
+                pt = {"monday": "Seg", "tuesday": "Ter", "wednesday": "Qua",
+                      "thursday": "Qui", "friday": "Sex", "saturday": "Sab", "sunday": "Dom"}
+                parts.append(f"{pt.get(d, d[:3])}: {oh[d]}")
+        hours = "; ".join(parts)
 
-    pid = raw.get("id", "")
+    website = raw.get("website", "") or ""
+    pid = raw.get("place_id", "")
+
     return Business(
-        name=name, address=addr, city=p["city"], state=p["state"],
-        country=p["country"], phone=phone, website=website or "",
-        maps_url=f"https://maps.google.com/?cid={pid}" if pid else "",
+        name=raw.get("title", ""),
+        address=addr,
+        city=p["city"],
+        state=p["state"],
+        country=p.get("country", "") or raw.get("country", ""),
+        phone=raw.get("phone", "") or "",
+        website=website,
+        maps_url=f"https://maps.google.com/?cid={raw.get('data_cid', pid)}" if pid else "",
         place_id=pid,
-        latitude=loc.get("latitude", 0.0), longitude=loc.get("longitude", 0.0),
+        latitude=gps.get("latitude", 0.0) or 0.0,
+        longitude=gps.get("longitude", 0.0) or 0.0,
         rating=raw.get("rating", 0.0) or 0.0,
-        reviews=raw.get("userRatingCount", 0) or 0,
-        hours=hours, categories=", ".join(types) if types else primary,
-        description=desc, has_website=has_own_website(website),
+        reviews=raw.get("reviews", 0) or 0,
+        hours=hours,
+        categories=", ".join(types) if types else primary,
+        description=raw.get("description", "") or "",
+        has_website=has_own_website(website),
         source_query=query,
         collected_at=datetime.now(timezone.utc).isoformat(),
     )

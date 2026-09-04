@@ -5,16 +5,11 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 
 from database import DedupDB
-from search import MapsClient, Business, build_fingerprint
+from search import SerpClient, build_fingerprint, to_business
 
 logger = logging.getLogger(__name__)
-
-# Global rate limiter — shared across all tasks
-_lock = threading.Lock()
-_last_req = 0.0
 
 
 @dataclass
@@ -22,7 +17,6 @@ class Task:
     id: str
     queries: list[str]
     limit: int
-    enrich: bool
     recheck_days: int
     status: str = "pending"       # pending | running | done | error | cancelled
     progress: str = ""
@@ -54,18 +48,17 @@ class Task:
 
 class TaskManager:
     def __init__(self, api_key: str, db_path: str = "data/dedup.db"):
-        self.client = MapsClient(api_key)
+        self.client = SerpClient(api_key)
         self.db = DedupDB(db_path)
         self._tasks: dict[str, Task] = {}
         self._lock = threading.Lock()
 
     def create(self, queries: list[str], limit: int = 20,
-               enrich: bool = False, recheck_days: int = 0) -> Task:
+               recheck_days: int = 0) -> Task:
         task = Task(
             id=uuid.uuid4().hex[:12],
             queries=queries,
             limit=limit,
-            enrich=enrich,
             recheck_days=recheck_days,
         )
         with self._lock:
@@ -124,13 +117,17 @@ class TaskManager:
         stats = {"found": 0, "new": 0, "seen": 0,
                  "with_site": 0, "no_site": 0, "unknown_site": 0}
         results: list[dict] = []
-        token = None
 
-        for page in range(3):
+        # SerpAPI pagination: start=0, start=20, start=40
+        # Max ~60 results (3 pages)
+        for page_start in range(0, 60, 20):
             if task._stop:
                 break
-            data = self.client.search(query, page_token=token)
-            places = data.get("places", [])
+            if len(results) >= task.limit:
+                break
+
+            data = self.client.search(query, start=page_start)
+            places = data.get("local_results", [])
             stats["found"] += len(places)
             if not places:
                 break
@@ -138,29 +135,17 @@ class TaskManager:
             for raw in places:
                 if task._stop:
                     break
-                pid = raw.get("id", "")
-                biz = Business.__init__ is not None  # placeholder
-                from search import to_business
+                pid = raw.get("place_id", "")
                 biz = to_business(raw, query)
                 fp = build_fingerprint(biz.name, biz.address, biz.phone)
 
                 if self.db.is_seen(pid, fp):
                     if task.recheck_days and self.db.needs_recheck(pid, fp, task.recheck_days):
-                        pass  # revalidate — continue
+                        pass  # revalidate
                     else:
                         stats["seen"] += 1
                         continue
 
-                # Optionally enrich with phone/details
-                if task.enrich and not biz.phone:
-                    d = self.client.details(pid)
-                    if d:
-                        biz.phone = d.get("internationalPhoneNumber", "") or d.get("nationalPhoneNumber", "")
-                        oh = d.get("regularOpeningHours")
-                        if oh and isinstance(oh, dict):
-                            biz.hours = "; ".join(oh.get("weekdayDescriptions", [])[:7])
-
-                # Classify website
                 hw = biz.has_website
                 if hw == "true":
                     stats["with_site"] += 1
@@ -173,14 +158,17 @@ class TaskManager:
                 stats["new"] += 1
                 results.append(_biz_to_dict(biz))
 
-            token = data.get("nextPageToken")
-            if not token:
+                if len(results) >= task.limit:
+                    break
+
+            # Check if there are more results
+            if not data.get("serpapi_pagination", {}).get("next"):
                 break
 
         return results, stats
 
 
-def _biz_to_dict(b: Business) -> dict:
+def _biz_to_dict(b) -> dict:
     return {
         "name": b.name,
         "address": b.address,

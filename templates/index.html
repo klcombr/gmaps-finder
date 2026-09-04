@@ -155,9 +155,6 @@
         <input type="number" id="recheck" value="0" min="0">
       </div>
     </div>
-    <div class="checkbox-row">
-      <label><input type="checkbox" id="enrich"> Buscar telefone (+ API calls)</label>
-    </div>
     <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center;">
       <button class="btn btn-primary" id="startBtn" onclick="startSearch()">
         Iniciar Busca
@@ -238,7 +235,6 @@ async function startSearch() {
       body: JSON.stringify({
         queries: queries,
         limit: parseInt(document.getElementById("limit").value) || 20,
-        enrich: document.getElementById("enrich").checked,
         recheck_days: parseInt(document.getElementById("recheck").value) || 0,
       }),
     });

@@ -19,16 +19,16 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+API_KEY = os.environ.get("SERPAPI_KEY", "")
 manager: TaskManager | None = None
 
 
 def _get_manager() -> TaskManager:
     global manager
     if manager is None:
-        key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+        key = os.environ.get("SERPAPI_KEY", "")
         if not key:
-            raise RuntimeError("GOOGLE_MAPS_API_KEY not set")
+            raise RuntimeError("SERPAPI_KEY not set")
         os.makedirs("data", exist_ok=True)
         manager = TaskManager(key, "data/dedup.db")
     return manager
@@ -46,7 +46,6 @@ def api_search():
     data = request.get_json(silent=True) or {}
     queries_raw = data.get("queries", "").strip()
     limit = min(int(data.get("limit", 20)), 60)
-    enrich = bool(data.get("enrich", False))
     recheck = int(data.get("recheck_days", 0))
 
     if not queries_raw:
@@ -61,7 +60,7 @@ def api_search():
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
 
-    task = mgr.create(queries, limit=limit, enrich=enrich, recheck_days=recheck)
+    task = mgr.create(queries, limit=limit, recheck_days=recheck)
     return jsonify({"task_id": task.id, "status": "started"})
 
 
