@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Google Maps — Buscador de Empresas</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --text: #e4e4e7; --muted: #8b8d97; --accent: #3b82f6;
+    --accent-hover: #2563eb; --green: #22c55e; --red: #ef4444;
+    --yellow: #eab308; --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+    min-height: 100vh;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+
+  /* Header */
+  header { text-align: center; margin-bottom: 32px; }
+  header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 4px; }
+  header p { color: var(--muted); font-size: 0.95rem; }
+
+  /* Card */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; margin-bottom: 20px;
+  }
+  .card h2 { font-size: 1.1rem; margin-bottom: 16px; }
+
+  /* Form */
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  textarea, input[type="number"] {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg);
+    color: var(--text); font-size: 0.9rem; font-family: inherit;
+    resize: vertical;
+  }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); }
+  textarea { min-height: 100px; }
+  .row { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+  .row > * { flex: 1; min-width: 140px; }
+
+  .checkbox-row {
+    display: flex; gap: 20px; margin-top: 12px; align-items: center;
+  }
+  .checkbox-row label { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--text); margin: 0; }
+  .checkbox-row input[type="checkbox"] { accent-color: var(--accent); }
+
+  /* Button */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 24px; border: none; border-radius: 8px;
+    font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-sm { padding: 6px 14px; font-size: 0.8rem; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
+
+  /* Progress */
+  .progress-bar { display: none; margin-top: 16px; }
+  .progress-bar.active { display: block; }
+  .progress-track {
+    height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; background: var(--accent); border-radius: 3px;
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+  .progress-text { font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
+
+  /* Stats */
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px; margin-top: 16px;
+  }
+  .stat {
+    background: var(--bg); border-radius: 8px; padding: 14px; text-align: center;
+    border: 1px solid var(--border);
+  }
+  .stat-value { font-size: 1.6rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.red { color: var(--red); }
+  .stat-value.yellow { color: var(--yellow); }
+  .stat-value.blue { color: var(--accent); }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th {
+    text-align: left; padding: 10px 12px; font-weight: 600;
+    border-bottom: 2px solid var(--border); color: var(--muted);
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em;
+    position: sticky; top: 0; background: var(--surface);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: rgba(59, 130, 246, 0.05); }
+
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-gray { background: rgba(139,141,151,0.15); color: var(--muted); }
+
+  .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filter-bar .btn { font-size: 0.8rem; padding: 5px 12px; }
+  .filter-bar .active-filter { border-color: var(--accent); color: var(--accent); }
+
+  .empty { text-align: center; padding: 40px; color: var(--muted); }
+  .error-msg { color: var(--red); margin-top: 8px; font-size: 0.9rem; }
+
+  @media (max-width: 640px) {
+    .row { flex-direction: column; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    header h1 { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Google Maps Business Finder</h1>
+    <p>Encontre empresas sem site para prospecção</p>
+  </header>
+
+  <!-- Search Form -->
+  <div class="card" id="searchCard">
+    <h2>Nova Busca</h2>
+    <div>
+      <label for="queries">Queries (uma por linha)</label>
+      <textarea id="queries" placeholder="barbearias Santos&#10;dentistas Praia Grande&#10;restaurantes São Vicente"></textarea>
+    </div>
+    <div class="row">
+      <div>
+        <label for="limit">Max leads por query</label>
+        <input type="number" id="limit" value="20" min="1" max="60">
+      </div>
+      <div>
+        <label for="recheck">Recheck days (0=never)</label>
+        <input type="number" id="recheck" value="0" min="0">
+      </div>
+    </div>
+    <div class="checkbox-row">
+      <label><input type="checkbox" id="enrich"> Buscar telefone (+ API calls)</label>
+    </div>
+    <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center;">
+      <button class="btn btn-primary" id="startBtn" onclick="startSearch()">
+        Iniciar Busca
+      </button>
+      <button class="btn btn-danger btn-sm" id="cancelBtn" onclick="cancelSearch()" style="display:none;">
+        Cancelar
+      </button>
+    </div>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+
+  <!-- Progress -->
+  <div class="card progress-bar" id="progressCard">
+    <h2>Progresso</h2>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-text" id="progressText">Aguardando...</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="card" id="statsCard" style="display:none;">
+    <h2>Resultados</h2>
+    <div class="stats-grid" id="statsGrid"></div>
+  </div>
+
+  <!-- Results -->
+  <div class="card" id="resultsCard" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <h2>Leads (<span id="leadsCount">0</span>)</h2>
+      <div class="filter-bar" id="filterBar">
+        <button class="btn btn-outline active-filter" data-filter="all" onclick="setFilter('all')">Todos</button>
+        <button class="btn btn-outline" data-filter="no_site" onclick="setFilter('no_site')">Sem site</button>
+        <button class="btn btn-outline" data-filter="with_site" onclick="setFilter('with_site')">Com site</button>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-outline btn-sm" onclick="exportData('csv')">CSV</button>
+        <button class="btn btn-outline btn-sm" onclick="exportData('jsonl')">JSONL</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Cidade/UF</th>
+            <th>Telefone</th>
+            <th>Site</th>
+            <th>Rating</th>
+            <th>Categoria</th>
+            <th>Maps</th>
+          </tr>
+        </thead>
+        <tbody id="leadsBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="emptyMsg" style="display:none;">Nenhum lead encontrado.</div>
+  </div>
+</div>
+
+<script>
+let currentTask = null;
+let pollTimer = null;
+let currentFilter = "all";
+let allLeads = [];
+
+async function startSearch() {
+  const queries = document.getElementById("queries").value.trim();
+  if (!queries) { showError("Digite pelo menos uma query"); return; }
+
+  hideError();
+  const btn = document.getElementById("startBtn");
+  btn.disabled = true;
+  btn.textContent = "Iniciando...";
+
+  try {
+    const resp = await fetch("/api/search", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        queries: queries,
+        limit: parseInt(document.getElementById("limit").value) || 20,
+        enrich: document.getElementById("enrich").checked,
+        recheck_days: parseInt(document.getElementById("recheck").value) || 0,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showError(data.error || "Erro"); btn.disabled = false; btn.textContent = "Iniciar Busca"; return; }
+
+    currentTask = data.task_id;
+    document.getElementById("progressCard").classList.add("active");
+    document.getElementById("statsCard").style.display = "";
+    document.getElementById("resultsCard").style.display = "";
+    document.getElementById("cancelBtn").style.display = "";
+    btn.textContent = "Buscando...";
+    allLeads = [];
+    poll();
+  } catch (e) {
+    showError("Erro de conexão: " + e.message);
+    btn.disabled = false;
+    btn.textContent = "Iniciar Busca";
+  }
+}
+
+function poll() {
+  if (!currentTask) return;
+  pollTimer = setTimeout(async () => {
+    try {
+      const resp = await fetch(`/api/task/${currentTask}`);
+      const task = await resp.json();
+      updateUI(task);
+      if (task.status === "running" || task.status === "pending") {
+        poll();
+      } else {
+        finishTask();
+      }
+    } catch (e) {
+      poll();
+    }
+  }, 1200);
+}
+
+function updateUI(task) {
+  // Progress
+  const pct = task.total_found > 0
+    ? Math.min(100, (task.leads_count / Math.max(task.total_found, 1)) * 100)
+    : (task.status === "done" ? 100 : 10);
+  document.getElementById("progressFill").style.width = pct + "%";
+  document.getElementById("progressText").textContent =
+    task.status === "done" ? "Concluído!" :
+    task.status === "error" ? "Erro: " + task.error :
+    task.progress || "Processando...";
+
+  // Stats
+  const sg = document.getElementById("statsGrid");
+  sg.innerHTML = `
+    <div class="stat"><div class="stat-value blue">${task.total_found}</div><div class="stat-label">Encontrados</div></div>
+    <div class="stat"><div class="stat-value green">${task.new_leads}</div><div class="stat-label">Novos</div></div>
+    <div class="stat"><div class="stat-value yellow">${task.already_seen}</div><div class="stat-label">Já vistos</div></div>
+    <div class="stat"><div class="stat-value red">${task.no_site}</div><div class="stat-label">Sem site</div></div>
+    <div class="stat"><div class="stat-value green">${task.with_site}</div><div class="stat-label">Com site</div></div>
+    <div class="stat"><div class="stat-value">${task.unknown_site}</div><div class="stat-label">Indeterminado</div></div>
+  `;
+}
+
+async function finishTask() {
+  document.getElementById("startBtn").disabled = false;
+  document.getElementById("startBtn").textContent = "Iniciar Busca";
+  document.getElementById("cancelBtn").style.display = "none";
+  await loadLeads();
+}
+
+async function loadLeads() {
+  if (!currentTask) return;
+  try {
+    const resp = await fetch(`/api/task/${currentTask}/leads`);
+    const data = await resp.json();
+    allLeads = data.leads || [];
+    renderLeads();
+  } catch (e) {}
+}
+
+function renderLeads() {
+  let leads = allLeads;
+  if (currentFilter === "no_site") leads = leads.filter(l => l.has_website === "false");
+  else if (currentFilter === "with_site") leads = leads.filter(l => l.has_website === "true");
+
+  document.getElementById("leadsCount").textContent = leads.length;
+  const tbody = document.getElementById("leadsBody");
+  const empty = document.getElementById("emptyMsg");
+
+  if (!leads.length) {
+    tbody.innerHTML = "";
+    empty.style.display = "";
+    return;
+  }
+  empty.style.display = "none";
+
+  tbody.innerHTML = leads.map(l => {
+    const badge = l.has_website === "true"
+      ? '<span class="badge badge-green">Sim</span>'
+      : l.has_website === "false"
+      ? '<span class="badge badge-red">Não</span>'
+      : '<span class="badge badge-gray">?</span>';
+    const city = [l.city, l.state].filter(Boolean).join("/");
+    const mapsLink = l.maps_url
+      ? `<a href="${esc(l.maps_url)}" target="_blank" style="color:var(--accent);">Maps</a>`
+      : "-";
+    return `<tr>
+      <td><strong>${esc(l.name)}</strong><br><span style="color:var(--muted);font-size:0.78rem;">${esc(l.address)}</span></td>
+      <td>${esc(city)}</td>
+      <td>${esc(l.phone || "-")}</td>
+      <td>${badge}</td>
+      <td>${l.rating ? l.rating.toFixed(1) + " (" + l.reviews + ")" : "-"}</td>
+      <td style="font-size:0.8rem;">${esc(l.categories)}</td>
+      <td>${mapsLink}</td>
+    </tr>`;
+  }).join("");
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll("#filterBar .btn").forEach(b => {
+    b.classList.toggle("active-filter", b.dataset.filter === f);
+  });
+  renderLeads();
+}
+
+async function cancelSearch() {
+  if (!currentTask) return;
+  await fetch(`/api/task/${currentTask}/cancel`, {method: "POST"});
+}
+
+function exportData(fmt) {
+  if (!currentTask) return;
+  window.location.href = `/api/task/${currentTask}/export/${fmt}`;
+}
+
+function showError(msg) {
+  document.getElementById("errorMsg").textContent = msg;
+}
+function hideError() {
+  document.getElementById("errorMsg").textContent = "";
+}
+
+function esc(s) {
+  if (!s) return "";
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+
+</body>
+</html>
